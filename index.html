@@ -23,26 +23,72 @@
   .reset-button:hover {
     background-color: #0056b3;
   }
+  .progress-container {
+    margin: 20px 0;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+  }
+  .progress-message {
+    text-align: center;
+    font-size: 18px;
+    color: #495057;
+    margin-bottom: 15px;
+    transition: color 0.3s ease;
+  }
+  .progress-message.fast-mode {
+    color: #dc3545;
+    font-weight: bold;
+  }
+  .progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #e9ecef;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background-color: #28a745;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  .results-container {
+    display: none;
+  }
+  .results-container.show {
+    display: block;
+  }
 </style>
 
 <h2>Mouse Delta Tester</h2>
 
-<button class="reset-button" onclick="resetStats()">Reset</button>
+<div class="progress-container" id="progressContainer">
+  <div class="progress-message">Scroll with your mousewheel or trackpad</div>
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+</div>
 
-<div class="stat" id="minDelta"></div>
-<div class="stat" id="maxDelta"></div>
-<div class="stat" id="avgDelta"></div>
-<div class="stat" id="minDeltaRaw"></div>
-<div class="stat" id="maxDeltaRaw"></div>
-<div class="stat" id="avgDeltaRaw"></div>
-<div class="stat" id="recentEvents"></div>
-<div class="stat" id="events"></div>
-<div class="stat" id="devicePixelRatio"></div>
-<div class="stat" id="physicalDPR"></div>
-<div class="stat" id="hostOS"></div>
+<div class="results-container" id="resultsContainer">
+  <button class="reset-button" onclick="resetStats()">Reset</button>
 
-<br />
-<a href="https://github.com/wilg/mouse-delta-tester">View on GitHub</a>
+  <div class="stat" id="minDelta"></div>
+  <div class="stat" id="maxDelta"></div>
+  <div class="stat" id="avgDelta"></div>
+  <div class="stat" id="minDeltaRaw"></div>
+  <div class="stat" id="maxDeltaRaw"></div>
+  <div class="stat" id="avgDeltaRaw"></div>
+  <div class="stat" id="recentEvents"></div>
+  <div class="stat" id="events"></div>
+  <div class="stat" id="devicePixelRatio"></div>
+  <div class="stat" id="physicalDPR"></div>
+  <div class="stat" id="hostOS"></div>
+
+  <br />
+  <a href="https://github.com/wilg/mouse-delta-tester">View on GitHub</a>
+</div>
 
 <script>
   /* ── element handles ────────────────────────────────────────────────────── */
@@ -57,9 +103,12 @@
   const elMaxRaw = document.getElementById("maxDeltaRaw");
   const elAvgRaw = document.getElementById("avgDeltaRaw");
   const elRecent = document.getElementById("recentEvents");
+  const elProgressFill = document.getElementById("progressFill");
+  const elProgressContainer = document.getElementById("progressContainer");
+  const elResultsContainer = document.getElementById("resultsContainer");
 
   /* ── stats ───────────────────────────────────────────────────────────────── */
-  const MAX_SCROLL_EVENTS = 50;
+  const REQUIRED_EVENTS = 100; // Number of events needed to fill the progress bar
   let scrollDeltas = [];
   let normalizedDeltas = [];
   let minDelta = 0;
@@ -70,19 +119,16 @@
   let totalDeltaRaw = 0;
   let eventCount = 0;
   let hasEvents = false;
+  let progressComplete = false;
 
   /* ── get device pixel ratio ─────────────────────────────────────────────── */
   const devicePixelRatio = window.devicePixelRatio || 1;
 
   /* ── get physical DPR ───────────────────────────────────────────────────── */
-  async function getPhysicalDPR() {
-    if (!window.getScreenDetails) return null; // not supported
-    try {
-      const details = await window.getScreenDetails();
-      return details.currentScreen.devicePixelRatio; // zoom-independent
-    } catch {
-      return null; // user denied permission
-    }
+  function approxPhysicalDpr() {
+    const cssDPR = window.devicePixelRatio;
+    const zoom = window.screen.width / window.innerWidth; // ≈ page-zoom
+    return cssDPR / zoom;
   }
 
   /* ── get host OS ────────────────────────────────────────────────────────── */
@@ -105,13 +151,8 @@
   }
 
   /* ── initialize physical DPR and host OS ───────────────────────────────── */
-  let physicalDPR = null;
+  let physicalDPR = approxPhysicalDpr();
   let hostOS = getHostOS();
-
-  // Initialize physical DPR
-  getPhysicalDPR().then((dpr) => {
-    physicalDPR = dpr;
-  });
 
   /* ── listen for every wheel packet ──────────────────────────────────────── */
   document.addEventListener(
@@ -127,6 +168,9 @@
   );
 
   function AddScrollEvent(delta) {
+    // Stop updating stats if progress is already complete
+    if (progressComplete) return;
+
     const normalizedDelta = delta / devicePixelRatio;
     scrollDeltas.push(delta);
     normalizedDeltas.push(normalizedDelta);
@@ -147,41 +191,25 @@
       if (delta > maxDeltaRaw) maxDeltaRaw = delta;
     }
 
-    // Keep only the last N events
-    if (scrollDeltas.length > MAX_SCROLL_EVENTS) {
-      const removed = scrollDeltas.shift();
-      const removedNormalized = normalizedDeltas.shift();
-      totalDelta -= removedNormalized;
-      totalDeltaRaw -= removed;
-      eventCount--;
+    // Update progress bar
+    const progress = Math.min((eventCount / REQUIRED_EVENTS) * 100, 100);
+    elProgressFill.style.width = progress + "%";
 
-      // If we removed the current min or max, recalculate
-      if (
-        Math.abs(removedNormalized - minDelta) < 0.001 ||
-        Math.abs(removedNormalized - maxDelta) < 0.001
-      ) {
-        if (normalizedDeltas.length > 0) {
-          minDelta = Math.min(...normalizedDeltas);
-          maxDelta = Math.max(...normalizedDeltas);
-        } else {
-          minDelta = 0;
-          maxDelta = 0;
-          hasEvents = false;
-        }
-      }
+    // Update progress message based on current phase
+    const progressMessage = document.querySelector(".progress-message");
+    if (eventCount <= REQUIRED_EVENTS / 2) {
+      progressMessage.textContent = "Scroll as slowly as possible";
+      progressMessage.classList.remove("fast-mode");
+    } else {
+      progressMessage.textContent = "Scroll as fast as possible";
+      progressMessage.classList.add("fast-mode");
+    }
 
-      if (
-        Math.abs(removed - minDeltaRaw) < 0.001 ||
-        Math.abs(removed - maxDeltaRaw) < 0.001
-      ) {
-        if (scrollDeltas.length > 0) {
-          minDeltaRaw = Math.min(...scrollDeltas);
-          maxDeltaRaw = Math.max(...scrollDeltas);
-        } else {
-          minDeltaRaw = 0;
-          maxDeltaRaw = 0;
-        }
-      }
+    // Show results when progress is complete
+    if (eventCount >= REQUIRED_EVENTS) {
+      progressComplete = true;
+      elProgressContainer.style.display = "none";
+      elResultsContainer.classList.add("show");
     }
   }
 
@@ -196,6 +224,17 @@
     totalDeltaRaw = 0;
     eventCount = 0;
     hasEvents = false;
+    progressComplete = false;
+
+    // Reset progress bar and show it again
+    elProgressFill.style.width = "0%";
+    elProgressContainer.style.display = "block";
+    elResultsContainer.classList.remove("show");
+
+    // Reset progress message
+    const progressMessage = document.querySelector(".progress-message");
+    progressMessage.textContent = "Scroll as slowly as possible";
+    progressMessage.classList.remove("fast-mode");
   }
 
   /* ── update display ──────────────────────────────────────────────────────── */
@@ -204,9 +243,9 @@
       2
     )}`;
 
-    elPhysicalDPR.innerHTML = `<b>Physical DPR</b><br>${
-      physicalDPR !== null ? physicalDPR.toFixed(2) : "Not supported/denied"
-    }`;
+    elPhysicalDPR.innerHTML = `<b>Physical DPR</b><br>${physicalDPR.toFixed(
+      2
+    )}`;
 
     elHostOS.innerHTML = `<b>Host OS</b><br>${hostOS}`;
 
