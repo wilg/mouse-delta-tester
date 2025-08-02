@@ -74,16 +74,16 @@
 <div class="results-container" id="resultsContainer">
   <button class="reset-button" onclick="resetStats()">Reset</button>
 
+  <h3>Normalized</h3>
   <div class="stat" id="minDelta"></div>
   <div class="stat" id="maxDelta"></div>
   <div class="stat" id="avgDelta"></div>
+  <h3>Raw</h3>
   <div class="stat" id="minDeltaRaw"></div>
   <div class="stat" id="maxDeltaRaw"></div>
   <div class="stat" id="avgDeltaRaw"></div>
-  <div class="stat" id="recentEvents"></div>
-  <div class="stat" id="events"></div>
+  <h3>Device</h3>
   <div class="stat" id="devicePixelRatio"></div>
-  <div class="stat" id="physicalDPR"></div>
   <div class="stat" id="hostOS"></div>
 
   <br />
@@ -93,16 +93,13 @@
 <script>
   /* ── element handles ────────────────────────────────────────────────────── */
   const elDevicePixelRatio = document.getElementById("devicePixelRatio");
-  const elPhysicalDPR = document.getElementById("physicalDPR");
   const elHostOS = document.getElementById("hostOS");
-  const elEvents = document.getElementById("events");
   const elMin = document.getElementById("minDelta");
   const elMax = document.getElementById("maxDelta");
   const elAvg = document.getElementById("avgDelta");
   const elMinRaw = document.getElementById("minDeltaRaw");
   const elMaxRaw = document.getElementById("maxDeltaRaw");
   const elAvgRaw = document.getElementById("avgDeltaRaw");
-  const elRecent = document.getElementById("recentEvents");
   const elProgressFill = document.getElementById("progressFill");
   const elProgressContainer = document.getElementById("progressContainer");
   const elResultsContainer = document.getElementById("resultsContainer");
@@ -124,13 +121,6 @@
   /* ── get device pixel ratio ─────────────────────────────────────────────── */
   const devicePixelRatio = window.devicePixelRatio || 1;
 
-  /* ── get physical DPR ───────────────────────────────────────────────────── */
-  function approxPhysicalDpr() {
-    const cssDPR = window.devicePixelRatio;
-    const zoom = window.screen.width / window.innerWidth; // ≈ page-zoom
-    return cssDPR / zoom;
-  }
-
   /* ── get host OS ────────────────────────────────────────────────────────── */
   function getHostOS() {
     const userAgent = navigator.userAgent;
@@ -150,8 +140,7 @@
     return "Unknown";
   }
 
-  /* ── initialize physical DPR and host OS ───────────────────────────────── */
-  let physicalDPR = approxPhysicalDpr();
+  /* ── initialize host OS ─────────────────────────────────────────────────── */
   let hostOS = getHostOS();
 
   /* ── listen for every wheel packet ──────────────────────────────────────── */
@@ -243,42 +232,34 @@
       2
     )}`;
 
-    elPhysicalDPR.innerHTML = `<b>Physical DPR</b><br>${physicalDPR.toFixed(
-      2
-    )}`;
-
     elHostOS.innerHTML = `<b>Host OS</b><br>${hostOS}`;
 
     if (!hasEvents) {
-      elEvents.textContent = "No Scroll Events";
       elMin.textContent = "";
       elMax.textContent = "";
       elAvg.textContent = "";
       elMinRaw.textContent = "";
       elMaxRaw.textContent = "";
       elAvgRaw.textContent = "";
-      elRecent.textContent = "";
     } else {
-      elEvents.innerHTML = `<b>Events Recorded</b><br>${eventCount}`;
-      elMin.innerHTML = `<b>Min Delta (Normalized)</b><br>${minDelta.toFixed(
+      elMin.innerHTML = `<b>Min (Normalized)</b><br>${minDelta.toFixed(
         2
-      )}`;
-      elMax.innerHTML = `<b>Max Delta (Normalized)</b><br>${maxDelta.toFixed(
+      )} CSS pixels/event`;
+      elMax.innerHTML = `<b>Max (Normalized)</b><br>${maxDelta.toFixed(
         2
-      )}`;
-      elAvg.innerHTML = `<b>Avg Delta (Normalized)</b><br>${(
+      )} CSS pixels/event`;
+      elAvg.innerHTML = `<b>Avg (Normalized)</b><br>${(
         totalDelta / eventCount
-      ).toFixed(2)}`;
-      elMinRaw.innerHTML = `<b>Min Delta (Raw)</b><br>${minDeltaRaw.toFixed(
+      ).toFixed(2)} pixels/event`;
+      elMinRaw.innerHTML = `<b>Min (Raw)</b><br>${minDeltaRaw.toFixed(
         2
-      )}`;
-      elMaxRaw.innerHTML = `<b>Max Delta (Raw)</b><br>${maxDeltaRaw.toFixed(
+      )} device pixels/event`;
+      elMaxRaw.innerHTML = `<b>Max (Raw)</b><br>${maxDeltaRaw.toFixed(
         2
-      )}`;
-      elAvgRaw.innerHTML = `<b>Avg Delta (Raw)</b><br>${(
+      )} device pixels/event`;
+      elAvgRaw.innerHTML = `<b>Avg (Raw)</b><br>${(
         totalDeltaRaw / eventCount
-      ).toFixed(2)}`;
-      elRecent.innerHTML = `<b>Recent Events</b><br>${scrollDeltas.length}`;
+      ).toFixed(2)} device pixels/event`;
     }
 
     requestAnimationFrame(step);
