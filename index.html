@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<title>Mouse Delta Tester</title>
+<style>
+  body {
+    font: 16px/1.4 sans-serif;
+    margin: 40px;
+  }
+  .stat {
+    margin-top: 8px;
+    font-family: monospace;
+  }
+  .reset-button {
+    margin-bottom: 20px;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .reset-button:hover {
+    background-color: #0056b3;
+  }
+</style>
+
+<h2>Mouse Delta Tester</h2>
+
+<button class="reset-button" onclick="resetStats()">Reset</button>
+
+<div class="stat" id="minDelta"></div>
+<div class="stat" id="maxDelta"></div>
+<div class="stat" id="avgDelta"></div>
+<div class="stat" id="minDeltaRaw"></div>
+<div class="stat" id="maxDeltaRaw"></div>
+<div class="stat" id="avgDeltaRaw"></div>
+<div class="stat" id="recentEvents"></div>
+<div class="stat" id="events"></div>
+<div class="stat" id="devicePixelRatio"></div>
+<div class="stat" id="physicalDPR"></div>
+<div class="stat" id="hostOS"></div>
+
+<br />
+<a href="https://github.com/wilg/mouse-delta-tester">View on GitHub</a>
+
+<script>
+  /* ── element handles ────────────────────────────────────────────────────── */
+  const elDevicePixelRatio = document.getElementById("devicePixelRatio");
+  const elPhysicalDPR = document.getElementById("physicalDPR");
+  const elHostOS = document.getElementById("hostOS");
+  const elEvents = document.getElementById("events");
+  const elMin = document.getElementById("minDelta");
+  const elMax = document.getElementById("maxDelta");
+  const elAvg = document.getElementById("avgDelta");
+  const elMinRaw = document.getElementById("minDeltaRaw");
+  const elMaxRaw = document.getElementById("maxDeltaRaw");
+  const elAvgRaw = document.getElementById("avgDeltaRaw");
+  const elRecent = document.getElementById("recentEvents");
+
+  /* ── stats ───────────────────────────────────────────────────────────────── */
+  const MAX_SCROLL_EVENTS = 50;
+  let scrollDeltas = [];
+  let normalizedDeltas = [];
+  let minDelta = 0;
+  let maxDelta = 0;
+  let totalDelta = 0;
+  let minDeltaRaw = 0;
+  let maxDeltaRaw = 0;
+  let totalDeltaRaw = 0;
+  let eventCount = 0;
+  let hasEvents = false;
+
+  /* ── get device pixel ratio ─────────────────────────────────────────────── */
+  const devicePixelRatio = window.devicePixelRatio || 1;
+
+  /* ── get physical DPR ───────────────────────────────────────────────────── */
+  async function getPhysicalDPR() {
+    if (!window.getScreenDetails) return null; // not supported
+    try {
+      const details = await window.getScreenDetails();
+      return details.currentScreen.devicePixelRatio; // zoom-independent
+    } catch {
+      return null; // user denied permission
+    }
+  }
+
+  /* ── get host OS ────────────────────────────────────────────────────────── */
+  function getHostOS() {
+    const userAgent = navigator.userAgent;
+    const platform = navigator.platform;
+
+    if (userAgent.includes("Windows")) return "Windows";
+    if (userAgent.includes("Mac")) return "macOS";
+    if (userAgent.includes("Linux")) return "Linux";
+    if (userAgent.includes("Android")) return "Android";
+    if (userAgent.includes("iOS")) return "iOS";
+
+    // Fallback to platform
+    if (platform.includes("Win")) return "Windows";
+    if (platform.includes("Mac")) return "macOS";
+    if (platform.includes("Linux")) return "Linux";
+
+    return "Unknown";
+  }
+
+  /* ── initialize physical DPR and host OS ───────────────────────────────── */
+  let physicalDPR = null;
+  let hostOS = getHostOS();
+
+  // Initialize physical DPR
+  getPhysicalDPR().then((dpr) => {
+    physicalDPR = dpr;
+  });
+
+  /* ── listen for every wheel packet ──────────────────────────────────────── */
+  document.addEventListener(
+    "wheel",
+    (ev) => {
+      ev.preventDefault(); // stop page scrolling
+      const delta = Math.abs(ev.deltaY); // raw pixels
+      if (!delta) return;
+
+      AddScrollEvent(delta);
+    },
+    { passive: false }
+  );
+
+  function AddScrollEvent(delta) {
+    const normalizedDelta = delta / devicePixelRatio;
+    scrollDeltas.push(delta);
+    normalizedDeltas.push(normalizedDelta);
+    eventCount++;
+    totalDelta += normalizedDelta;
+    totalDeltaRaw += delta;
+
+    if (!hasEvents) {
+      minDelta = normalizedDelta;
+      maxDelta = normalizedDelta;
+      minDeltaRaw = delta;
+      maxDeltaRaw = delta;
+      hasEvents = true;
+    } else {
+      if (normalizedDelta < minDelta) minDelta = normalizedDelta;
+      if (normalizedDelta > maxDelta) maxDelta = normalizedDelta;
+      if (delta < minDeltaRaw) minDeltaRaw = delta;
+      if (delta > maxDeltaRaw) maxDeltaRaw = delta;
+    }
+
+    // Keep only the last N events
+    if (scrollDeltas.length > MAX_SCROLL_EVENTS) {
+      const removed = scrollDeltas.shift();
+      const removedNormalized = normalizedDeltas.shift();
+      totalDelta -= removedNormalized;
+      totalDeltaRaw -= removed;
+      eventCount--;
+
+      // If we removed the current min or max, recalculate
+      if (
+        Math.abs(removedNormalized - minDelta) < 0.001 ||
+        Math.abs(removedNormalized - maxDelta) < 0.001
+      ) {
+        if (normalizedDeltas.length > 0) {
+          minDelta = Math.min(...normalizedDeltas);
+          maxDelta = Math.max(...normalizedDeltas);
+        } else {
+          minDelta = 0;
+          maxDelta = 0;
+          hasEvents = false;
+        }
+      }
+
+      if (
+        Math.abs(removed - minDeltaRaw) < 0.001 ||
+        Math.abs(removed - maxDeltaRaw) < 0.001
+      ) {
+        if (scrollDeltas.length > 0) {
+          minDeltaRaw = Math.min(...scrollDeltas);
+          maxDeltaRaw = Math.max(...scrollDeltas);
+        } else {
+          minDeltaRaw = 0;
+          maxDeltaRaw = 0;
+        }
+      }
+    }
+  }
+
+  function resetStats() {
+    scrollDeltas = [];
+    normalizedDeltas = [];
+    minDelta = 0;
+    maxDelta = 0;
+    totalDelta = 0;
+    minDeltaRaw = 0;
+    maxDeltaRaw = 0;
+    totalDeltaRaw = 0;
+    eventCount = 0;
+    hasEvents = false;
+  }
+
+  /* ── update display ──────────────────────────────────────────────────────── */
+  function step() {
+    elDevicePixelRatio.innerHTML = `<b>Device Pixel Ratio</b><br>${devicePixelRatio.toFixed(
+      2
+    )}`;
+
+    elPhysicalDPR.innerHTML = `<b>Physical DPR</b><br>${
+      physicalDPR !== null ? physicalDPR.toFixed(2) : "Not supported/denied"
+    }`;
+
+    elHostOS.innerHTML = `<b>Host OS</b><br>${hostOS}`;
+
+    if (!hasEvents) {
+      elEvents.textContent = "No Scroll Events";
+      elMin.textContent = "";
+      elMax.textContent = "";
+      elAvg.textContent = "";
+      elMinRaw.textContent = "";
+      elMaxRaw.textContent = "";
+      elAvgRaw.textContent = "";
+      elRecent.textContent = "";
+    } else {
+      elEvents.innerHTML = `<b>Events Recorded</b><br>${eventCount}`;
+      elMin.innerHTML = `<b>Min Delta (Normalized)</b><br>${minDelta.toFixed(
+        2
+      )}`;
+      elMax.innerHTML = `<b>Max Delta (Normalized)</b><br>${maxDelta.toFixed(
+        2
+      )}`;
+      elAvg.innerHTML = `<b>Avg Delta (Normalized)</b><br>${(
+        totalDelta / eventCount
+      ).toFixed(2)}`;
+      elMinRaw.innerHTML = `<b>Min Delta (Raw)</b><br>${minDeltaRaw.toFixed(
+        2
+      )}`;
+      elMaxRaw.innerHTML = `<b>Max Delta (Raw)</b><br>${maxDeltaRaw.toFixed(
+        2
+      )}`;
+      elAvgRaw.innerHTML = `<b>Avg Delta (Raw)</b><br>${(
+        totalDeltaRaw / eventCount
+      ).toFixed(2)}`;
+      elRecent.innerHTML = `<b>Recent Events</b><br>${scrollDeltas.length}`;
+    }
+
+    requestAnimationFrame(step);
+  }
+  step();
+</script>
